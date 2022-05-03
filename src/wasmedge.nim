@@ -9,6 +9,13 @@ proc removeWasmEdge(name, kind, partof: string): string =
       name[prefix.len..name.high]
     else:
       name
+  case result:
+  of "String":
+    result = "WasmString"
+  of "Value":
+    result = "WasmValue"
+  else: discard
+
   case kind
   of "const", "typedef":
     discard
@@ -28,12 +35,12 @@ template isOk*(res: Result): bool = resultOk(res)
 template isBad*(res: Result): bool = not isOk(res)
 template msg*(res: Result): cstring = resultGetMessage(res)
 
-template wasmValue*(i: int32): Value = valueGenI32(i)
-template wasmValue*(i: int64): Value = valueGenI64(i)
-template wasmValue*(f: float32): Value = valueGenF32(f)
-template wasmValue*(f: float64): Value = valueGenF64(f)
+template wasmValue*(i: int32): WasmValue = valueGenI32(i)
+template wasmValue*(i: int64): WasmValue = valueGenI64(i)
+template wasmValue*(f: float32): WasmValue = valueGenF32(f)
+template wasmValue*(f: float64): WasmValue = valueGenF64(f)
 
-proc getValue*[T: WasmTypes](val: Value): T =
+proc getValue*[T: WasmTypes](val: WasmValue): T =
   when T is int32:
     valueGeti32(val)
   elif T is int64:
@@ -45,9 +52,13 @@ proc getValue*[T: WasmTypes](val: Value): T =
   else: # Incase we add more types to `WasmTypes` later
     static: assert false
 
-template wasmString*(s: string): String = stringCreateByCstring(s.cstring)
-template wasmString*(s: cstring): String = stringCreateByCstring(s)
-template wasmString*(oa: openarray[char or byte]): String = stringCreateByBuffer(oa[0].addr, oa.len - 1)
+template wasmString*(s: string): WasmString = stringCreateByCstring(s.cstring)
+template wasmString*(s: cstring): WasmString = stringCreateByCstring(s)
+proc wasmString*(oa: openarray[char or byte]): WasmString = stringCreateByBuffer(cast[cstring](oa[0].addr), oa.len - 1)
+
+proc execute*(vm: ptr VmContext, name: WasmString, args, results: var openArray[WasmValue]): Result =
+  vm.vmExecute(name, args[0].addr, args.len.uint32, results[0].addr, results.len.uint32)
+
 
 proc main() =
   echo "WasmEdge Version: ", versionGet()
@@ -55,9 +66,10 @@ proc main() =
   confCtx.configureAddHostRegistration(hostRegistrationWasi)
   let
     vmCtx = confCtx.vmCreate(nil)
-    params = [wasmValue(10i32), wasmValue(30i32)]
-    returns = [Value()]
     funcName = wasmString("add")
+  var
+    params = [wasmValue(10i32), wasmValue(30i32)]
+    results = [WasmValue()]
   var result = vmCtx.vmLoadWasmFromFile("adds.wasm")
 
   if result.isBad:
@@ -75,10 +87,10 @@ proc main() =
     return
 
 
-  result = vmCtx.vmExecute(funcName, params[0].unsafeaddr, 2, returns[0].unsafeaddr, 1)
+  result = vmCtx.execute(funcName, params, results)
 
   if result.isOk:
-    echo "The value is: ", returns[0].getValue[:int32]()
+    echo "The value is: ", results[0].getValue[:int32]()
   else:
     echo "Execution failed: ", resultGetMessage(result)
 
