@@ -1,3 +1,5 @@
+*.wasm
+*.out
 nimcache/
 nimblecache/
 htmldocs/
