@@ -1,5 +1,5 @@
 import futhark
-import int128s
+import wasmedge/int128s
 import std/strutils
 
 proc removeWasmEdge(name, kind, partof: string): string =
@@ -28,7 +28,13 @@ importc:
   renameCallback removeWasmEdge
   "wasmedge/wasmedge.h"
 
-type WasmTypes = int32 or float32 or int64 or float64
+type
+  WasmTypes = int32 or float32 or int64 or float64
+  WasmLoadError = object of CatchableError
+  WasmValidationError = object of CatchableError
+  WasmInstantiationError = object of CatchableError
+  WasmExecutionError = object of CatchableError
+
 
 
 template isOk*(res: Result): bool = resultOk(res)
@@ -56,8 +62,25 @@ template wasmString*(s: string): WasmString = stringCreateByCstring(s.cstring)
 template wasmString*(s: cstring): WasmString = stringCreateByCstring(s)
 proc wasmString*(oa: openarray[char or byte]): WasmString = stringCreateByBuffer(cast[cstring](oa[0].addr), oa.len - 1)
 
-proc execute*(vm: ptr VmContext, name: WasmString, args, results: var openArray[WasmValue]): Result =
-  vm.vmExecute(name, args[0].addr, args.len.uint32, results[0].addr, results.len.uint32)
+proc loadWasmFromFile*(vm: ptr VmContext, file: string or cstring) =
+  let res = vm.vmLoadWasmFromFile(file)
+  if res.isBad:
+    raise newException(WasmLoadError, $res.msg)
+
+proc validate*(vm: ptr VmContext) =
+  let res = vm.vmValidate()
+  if res.isBad:
+    raise newException(WasmValidationError, $res.msg)
+
+proc instantiate*(vm: ptr VMContext) =
+  let res = vm.vmInstantiate()
+  if res.isBad:
+    raise newException(WasmInstantiationError, $res.msg)
+
+proc execute*(vm: ptr VmContext, name: WasmString, args, results: var openArray[WasmValue]) =
+  let res = vm.vmExecute(name, args[0].addr, args.len.uint32, results[0].addr, results.len.uint32)
+  if res.isBad:
+    raise newException(WasmExecutionError, $res.msg)
 
 
 proc main() =
@@ -67,34 +90,29 @@ proc main() =
   let
     vmCtx = confCtx.vmCreate(nil)
     funcName = wasmString("add")
-  var
-    params = [wasmValue(10i32), wasmValue(30i32)]
-    results = [WasmValue()]
-  var result = vmCtx.vmLoadWasmFromFile("adds.wasm")
 
-  if result.isBad:
-    echo "Loading failed: ", resultGetMessage(result)
-    return
-  result = vmValidate(vmCtx)
+  try:
+    vmCtx.loadWasmFromFile("adds.wasm")
+    vmCtx.validate()
+    vmCtx.instantiate()
 
-  if result.isBad:
-    echo "Validation failed: ", resultGetMessage(result)
-    return
+    var
+      params = [wasmValue(10i32), wasmValue(30i32)]
+      results = [WasmValue()]
+    vmCtx.execute(funcName, params, results)
+    echo "The result is: ", results[0].getValue[: int32]
 
-  result = vmCtx.vmInstantiate()
-  if result.isBad:
-    echo "Instantiation failed: ", resultGetMessage(result)
-    return
+  except WasmLoadError as e:
+    echo "Loading failed: ", e.msg
+  except WasmValidationError as e:
+    echo "Validation failed: ", e.msg
+  except WasmInstantiationError as e:
+    echo "Instantiation failed: ", e.msg
+  except WasmExecutionError as e:
+    echo "Execution failed: ", e.msg
+  finally:
+    vmDelete(vmCtx)
+    configureDelete(confCtx)
+    stringDelete(funcName)
 
-
-  result = vmCtx.execute(funcName, params, results)
-
-  if result.isOk:
-    echo "The value is: ", results[0].getValue[:int32]()
-  else:
-    echo "Execution failed: ", resultGetMessage(result)
-
-  vmDelete(vmCtx)
-  configureDelete(confCtx)
-  stringDelete(funcName)
 main()
