@@ -92,7 +92,7 @@ proc main() =
     funcName = wasmString("add")
 
   try:
-    vmCtx.loadWasmFromFile("adds.wasm")
+    vmCtx.loadWasmFromFile("add.wasm")
     vmCtx.validate()
     vmCtx.instantiate()
 
