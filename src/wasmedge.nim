@@ -89,18 +89,22 @@ proc main() =
   confCtx.configureAddHostRegistration(hostRegistrationWasi)
   let
     vmCtx = confCtx.vmCreate(nil)
-    funcName = wasmString("add")
+    addName = wasmString("add")
+    multiName = wasmString("multiply")
 
   try:
-    vmCtx.loadWasmFromFile("add.wasm")
+    vmCtx.loadWasmFromFile("maths.wasm")
     vmCtx.validate()
     vmCtx.instantiate()
 
     var
       params = [wasmValue(10i32), wasmValue(30i32)]
       results = [WasmValue()]
-    vmCtx.execute(funcName, params, results)
-    echo "The result is: ", results[0].getValue[: int32]
+    vmCtx.execute(addName, params, results)
+    assert results[0].getValue[: int32] == 40
+    vmCtx.execute(multiName, params, results)
+    assert results[0].getValue[: int32] == 300
+
 
   except WasmLoadError as e:
     echo "Loading failed: ", e.msg
@@ -113,6 +117,8 @@ proc main() =
   finally:
     vmDelete(vmCtx)
     configureDelete(confCtx)
-    stringDelete(funcName)
+    stringDelete(addName)
+    stringDelete(multiName)
+
 
 main()

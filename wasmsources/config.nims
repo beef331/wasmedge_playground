@@ -19,6 +19,6 @@ else:
 --noMain:on
 let outputName = projectName() & ".wasm"
 # Pass this to Emscripten linker to generate html file scaffold for us.
-switch("passL", "--no-entry -sSTANDALONE_WASM=1 -sEXPORTED_FUNCTIONS=['_add']")
+switch("passL", "--no-entry -sSTANDALONE_WASM=1")
 switch("passL", "-o " & outputName)
 
