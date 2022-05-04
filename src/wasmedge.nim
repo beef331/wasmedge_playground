@@ -1,6 +1,6 @@
 import futhark
 import wasmedge/int128s
-import std/[strutils, os]
+import std/[strutils, os, typetraits]
 
 proc removeWasmEdge(name, kind, partof: string): string =
   const prefix = "WasmEdge_"
@@ -11,9 +11,13 @@ proc removeWasmEdge(name, kind, partof: string): string =
       name
   case result:
   of "String":
-    result = "WasmString"
+    result = "WasmInternalString"
   of "Value":
     result = "WasmValue"
+  of "ConfigureContext":
+    result = "WasmInternalConfContext"
+  of "VMContext":
+    result = "WasmVmContext"
   else: discard
 
   case kind
@@ -40,6 +44,29 @@ type
   WasmInstantiationError* = object of CatchableError
   WasmExecutionError* = object of CatchableError
 
+  ## String Types
+  WasmString* = distinct WasmInternalString
+  UnmanagedWasmString* = distinct WasmInternalString ## This string doesnt need destroyed, it reuses resources
+  WasmStrings* = WasmString or UnmanagedWasmString
+
+  ConfigureContext = distinct ptr WasmInternalConfContext
+  VmContext = distinct ptr WasmVmContext
+  HostRegistration* = enumwasmedgehostregistration
+
+proc `=destroy`(str: var WasmString) = stringDelete(WasmInternalString str)
+
+proc `=destroy`(conf: var ConfigureContext) =
+  if (ptr WasmInternalConfContext)(conf) != nil:
+    configureDelete((ptr WasmInternalConfContext)(conf))
+
+proc `=destroy`(vm: var VmContext) =
+  if vm.distinctBase != nil:
+    vmDelete(vm.distinctBase)
+
+
+proc createConfigureContext*(): ConfigureContext = ConfigureContext configureCreate()
+proc vmCreate*(c: var ConfigureContext): VmContext = VmContext(c.distinctBase.vmCreate(nil))
+proc add*(c: var ConfigureContext, host: HostRegistration) = c.distinctBase.configureAddHostRegistration(host)
 
 
 template isOk*(res: Result): bool = resultOk(res)
@@ -63,26 +90,31 @@ proc getValue*[T: WasmTypes](val: WasmValue): T =
   else: # Incase we add more types to `WasmTypes` later
     static: assert false
 
-template wasmString*(s: string): WasmString = stringCreateByCstring(s.cstring)
-template wasmString*(s: cstring): WasmString = stringCreateByCstring(s)
+template wasmString*(s: string): WasmString = WasmString stringCreateByCstring(s.cstring)
+template wasmString*(s: cstring): WasmString = WasmString stringCreateByCstring(s)
 proc wasmString*(oa: openarray[char or byte]): WasmString = stringCreateByBuffer(cast[cstring](oa[0].addr), oa.len - 1)
 
-proc loadWasmFromFile*(vm: ptr VmContext, file: string or cstring) =
-  let res = vm.vmLoadWasmFromFile(file)
+template unmanagedWasmString*(s: string): UnmanagedWasmString = UnmanagedWasmString wasmString(s[0], s.len.uint32)
+template unmanagedWasmString*(s: cstring, len: uint32): UnmanagedWasmString = UnmanagedWasmString wasmString(s[0], len)
+proc unmanagedWasmString*(oa: openarray[char or byte]): UnmanagedWasmString = UnmanagedWasmString(wasmString(oa))
+
+
+proc loadWasmFromFile*(vm: var VmContext, file: string or cstring) =
+  let res = vm.distinctBase.vmLoadWasmFromFile(file)
   if res.isBad:
     raise newException(WasmLoadError, $res.msg)
 
-proc validate*(vm: ptr VmContext) =
-  let res = vm.vmValidate()
+proc validate*(vm: var VmContext) =
+  let res = vm.distinctBase.vmValidate()
   if res.isBad:
     raise newException(WasmValidationError, $res.msg)
 
-proc instantiate*(vm: ptr VMContext) =
-  let res = vm.vmInstantiate()
+proc instantiate*(vm: var VMContext) =
+  let res = vm.distinctBase.vmInstantiate()
   if res.isBad:
     raise newException(WasmInstantiationError, $res.msg)
 
-proc execute*(vm: ptr VmContext, name: WasmString, args, results: var openArray[WasmValue]) =
-  let res = vm.vmExecute(name, args[0].addr, args.len.uint32, results[0].addr, results.len.uint32)
+proc execute*(vm: var VmContext, name: WasmStrings, args, results: var openArray[WasmValue]) =
+  let res = vm.distinctBase.vmExecute(WasmInternalString(name), args[0].addr, args.len.uint32, results[0].addr, results.len.uint32)
   if res.isBad:
     raise newException(WasmExecutionError, $res.msg)
