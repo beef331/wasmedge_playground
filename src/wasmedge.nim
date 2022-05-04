@@ -21,7 +21,7 @@ proc removeWasmEdge(name, kind, partof: string): string =
   else: discard
 
   case kind
-  of "const", "typedef":
+  of "const", "typedef", "enum":
     discard
   else:
     result[0] = result[0].toLowerAscii
@@ -52,8 +52,12 @@ type
   ConfigureContext = distinct ptr WasmInternalConfContext
   VmContext = distinct ptr WasmVmContext
   HostRegistration* = enumwasmedgehostregistration
+  ValType* = enumwasmedgevaltype
+  FunctionType* = distinct ptr FunctionTypeContext
 
-proc `=destroy`(str: var WasmString) = stringDelete(WasmInternalString str)
+proc `=destroy`(str: var WasmString) =
+  if str.distinctBase.length > 0 and str.distinctBase.buf != nil:
+    stringDelete(WasmInternalString str)
 
 proc `=destroy`(conf: var ConfigureContext) =
   if (ptr WasmInternalConfContext)(conf) != nil:
@@ -94,9 +98,18 @@ template wasmString*(s: string): WasmString = WasmString stringCreateByCstring(s
 template wasmString*(s: cstring): WasmString = WasmString stringCreateByCstring(s)
 proc wasmString*(oa: openarray[char or byte]): WasmString = stringCreateByBuffer(cast[cstring](oa[0].addr), oa.len - 1)
 
-template unmanagedWasmString*(s: string): UnmanagedWasmString = UnmanagedWasmString wasmString(s[0], s.len.uint32)
+template unmanagedWasmString*(s: string): UnmanagedWasmString = UnmanagedWasmString wasmString(s)
 template unmanagedWasmString*(s: cstring, len: uint32): UnmanagedWasmString = UnmanagedWasmString wasmString(s[0], len)
 proc unmanagedWasmString*(oa: openarray[char or byte]): UnmanagedWasmString = UnmanagedWasmString(wasmString(oa))
+
+proc `$`*(s: WasmStrings): string =
+  result.setlen(256)
+  let realLength = stringCopy(s.distinctBase, result.cstring, result.len.uint32)
+  result.setLen(realLength.int)
+
+proc `==`*(a, b: distinct WasmStrings): bool = stringIsEqual(a.distinctBase, b.distinctBase)
+proc `==`*(a: string, b: WasmStrings): bool = stringIsEqual(unmanagedWasmString(a).distinctBase, b.distinctBase)
+proc `==`*(a: WasmStrings, b: string): bool = stringIsEqual(a.distinctBase, unmanagedWasmString(b).distinctBase)
 
 
 proc loadWasmFromFile*(vm: var VmContext, file: string or cstring) =
@@ -118,3 +131,39 @@ proc execute*(vm: var VmContext, name: WasmStrings, args, results: var openArray
   let res = vm.distinctBase.vmExecute(WasmInternalString(name), args[0].addr, args.len.uint32, results[0].addr, results.len.uint32)
   if res.isBad:
     raise newException(WasmExecutionError, $res.msg)
+
+proc execute*(vm: var VmContext, name: string, args, results: var openArray[WasmValue]) =
+  let funcName = unmanagedWasmString(name)
+  let res = vm.distinctBase.vmExecute(WasmInternalString(funcName), args[0].addr, args.len.uint32, results[0].addr, results.len.uint32)
+  if res.isBad:
+    raise newException(WasmExecutionError, $res.msg)
+
+iterator functionNames*(vm: VmContext, count = 128): UnmanagedWasmString =
+  ## yields the function names for `count` functions in the VM
+  var
+    funcNames = newSeq[UnmanagedWasmString](count)
+    funcTypes = newSeq[FunctionType](count)
+  let realCount = int vm.distinctBase.vmGetFunctionList(funcNames[0].distinctBase.addr, funcTypes[0].distinctBase.addr, count.uint32 - 1)
+  funcNames.setLen(realCount)
+  funcTypes.setLen(realCount)
+  for x in funcNames:
+    yield x
+
+iterator functionNameTypes*(vm: VmContext, count = 128): (UnmanagedWasmString, FunctionType) =
+  ## yields the function names and types for `count` functions in the VM
+  var
+    funcNames = newSeq[UnmanagedWasmString](count)
+    funcTypes = newSeq[FunctionType](count)
+  let realCount = int vm.distinctBase.vmGetFunctionList(funcNames[0].distinctBase.addr, funcTypes[0].distinctBase.addr, count.uint32 - 1)
+  funcNames.setLen(realCount)
+  funcTypes.setLen(realCount)
+  for i, x in funcNames:
+    yield (x, funcTypes[i])
+
+iterator params*(funcType: FunctionType): ValType =
+  let paramCount = funcType.distinctBase.functionTypeGetParametersLength()
+  var paramTypes = newSeq[ValType](paramCount.int)
+  let gotCount = funcType.distinctBase.functionTypeGetParameters(paramTypes[0].addr, paramCount)
+  for paramType in paramTypes:
+    yield paramType
+
