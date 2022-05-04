@@ -1,5 +1,6 @@
 *.wasm
 *.out
+*.nim.kate-swp
 nim.cfg
 nimcache/
 nimblecache/

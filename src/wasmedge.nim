@@ -29,8 +29,8 @@ importc:
   path (wasmedgePath / "include")
   renameCallback removeWasmEdge
   "wasmedge/wasmedge.h"
-
-{.passL:"-L" & wasmedgePath / "lib".}
+when wasmedgePath.len > 0: # Only add link path if we've data
+  {.passL:"-L" & wasmedgePath / "lib".}
 {.passL:"-lwasmedge_c".}
 
 type
