@@ -1,6 +1,6 @@
 import futhark
 import wasmedge/int128s
-import std/strutils
+import std/[strutils, os]
 
 proc removeWasmEdge(name, kind, partof: string): string =
   const prefix = "WasmEdge_"
@@ -22,11 +22,15 @@ proc removeWasmEdge(name, kind, partof: string): string =
   else:
     result[0] = result[0].toLowerAscii
 
+const wasmedgePath {.strdefine.} = ""
+
 importc:
   sysPath "/usr/lib/clang/13.0.1/include"
-  path "/home/jason/.wasmedge/include/"
+  path (wasmedgePath / "include")
   renameCallback removeWasmEdge
   "wasmedge/wasmedge.h"
+
+{.passL:"-L" & wasmedgePath / "lib".}
 
 type
   WasmTypes* = int32 or float32 or int64 or float64

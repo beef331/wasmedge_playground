@@ -1,0 +1,1 @@
+--passL:"-lwasmedge_c"

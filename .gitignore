@@ -1,5 +1,6 @@
 *.wasm
 *.out
+nim.cfg
 nimcache/
 nimblecache/
 htmldocs/
