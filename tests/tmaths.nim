@@ -6,7 +6,7 @@
 # To run these tests, simply execute `nimble test`.
 
 import unittest
-import std/[sugar, sequtils]
+import std/[sugar]
 import wasmedge
 test "Maths Test":
   var confCtx = createConfigureContext()
@@ -16,9 +16,6 @@ test "Maths Test":
   vmCtx.loadWasmFromFile("maths.wasm")
   vmCtx.validate()
   vmCtx.instantiate()
-
-  block:
-    var a = WasmInternalString()
 
   var
     params = [wasmValue(10i32), wasmValue(30i32)]
