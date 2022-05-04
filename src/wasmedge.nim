@@ -29,11 +29,11 @@ importc:
   "wasmedge/wasmedge.h"
 
 type
-  WasmTypes = int32 or float32 or int64 or float64
-  WasmLoadError = object of CatchableError
-  WasmValidationError = object of CatchableError
-  WasmInstantiationError = object of CatchableError
-  WasmExecutionError = object of CatchableError
+  WasmTypes* = int32 or float32 or int64 or float64
+  WasmLoadError* = object of CatchableError
+  WasmValidationError* = object of CatchableError
+  WasmInstantiationError* = object of CatchableError
+  WasmExecutionError* = object of CatchableError
 
 
 
@@ -81,44 +81,3 @@ proc execute*(vm: ptr VmContext, name: WasmString, args, results: var openArray[
   let res = vm.vmExecute(name, args[0].addr, args.len.uint32, results[0].addr, results.len.uint32)
   if res.isBad:
     raise newException(WasmExecutionError, $res.msg)
-
-
-proc main() =
-  echo "WasmEdge Version: ", versionGet()
-  let confCtx = configureCreate()
-  confCtx.configureAddHostRegistration(hostRegistrationWasi)
-  let
-    vmCtx = confCtx.vmCreate(nil)
-    addName = wasmString("add")
-    multiName = wasmString("multiply")
-
-  try:
-    vmCtx.loadWasmFromFile("maths.wasm")
-    vmCtx.validate()
-    vmCtx.instantiate()
-
-    var
-      params = [wasmValue(10i32), wasmValue(30i32)]
-      results = [WasmValue()]
-    vmCtx.execute(addName, params, results)
-    assert results[0].getValue[: int32] == 40
-    vmCtx.execute(multiName, params, results)
-    assert results[0].getValue[: int32] == 300
-
-
-  except WasmLoadError as e:
-    echo "Loading failed: ", e.msg
-  except WasmValidationError as e:
-    echo "Validation failed: ", e.msg
-  except WasmInstantiationError as e:
-    echo "Instantiation failed: ", e.msg
-  except WasmExecutionError as e:
-    echo "Execution failed: ", e.msg
-  finally:
-    vmDelete(vmCtx)
-    configureDelete(confCtx)
-    stringDelete(addName)
-    stringDelete(multiName)
-
-
-main()
