@@ -31,6 +31,7 @@ importc:
   "wasmedge/wasmedge.h"
 
 {.passL:"-L" & wasmedgePath / "lib".}
+{.passL:"-lwasmedge_c".}
 
 type
   WasmTypes* = int32 or float32 or int64 or float64
