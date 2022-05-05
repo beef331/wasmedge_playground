@@ -1,6 +1,6 @@
 import futhark
 import wasmedge/int128s
-import std/[strutils, os, typetraits]
+import std/[strutils, os, typetraits, strformat]
 
 proc removeWasmEdge(name, kind, partof: string): string =
   const prefix = "WasmEdge_"
@@ -45,6 +45,8 @@ type
   WasmValidationError* = object of WasmError
   WasmInstantiationError* = object of WasmError
   WasmExecutionError* = object of WasmError
+
+  WasmReturnVal* = distinct WasmValue
 
   ## String Types
   WasmString* = distinct WasmInternalString
@@ -97,6 +99,23 @@ proc getValue*[T: WasmTypes](val: WasmValue): T =
     valueGetF64(val)
   else: # Incase we add more types to `WasmTypes` later
     static: assert false
+
+proc `$`*(val: WasmValue): string =
+  case val.typefield
+  of valTypei32:
+    $val.getValue[: int32]
+  of valTypei64:
+    $val.getValue[: int64]
+  of valTypef32:
+    $val.getValue[: float32]
+  of valTypef64:
+    $val.getValue[: float64]
+  of valTypeFuncRef:
+    fmt"""FuncRef: {getValue[int64](val)}"""
+  of valTypeExternRef:
+    fmt"""ExternRef: {getValue[int64](val)}"""
+  of valTypev128:
+    "Some V128"
 
 template wasmString*(s: string): WasmString = WasmString stringCreateByCstring(s.cstring)
 template wasmString*(s: cstring): WasmString = WasmString stringCreateByCstring(s)
