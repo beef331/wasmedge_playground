@@ -15,9 +15,15 @@ proc removeWasmEdge(name, kind, partof: string): string =
   of "Value":
     result = "WasmValue"
   of "ConfigureContext":
-    result = "WasmInternalConfContext"
+    result = "WasmConfContext"
   of "VMContext":
     result = "WasmVmContext"
+  of "MemoryInstanceContext":
+    result = "WasmMemoryInstanceContext"
+  of "FunctionInstanceContext":
+    result = "WasmFunctionInstContext"
+  of "Result":
+    result = "WasmResult"
   else: discard
 
   case kind
@@ -53,19 +59,26 @@ type
   UnmanagedWasmString* = distinct WasmInternalString ## This string doesnt need destroyed, it reuses resources
   WasmStrings* = WasmString or UnmanagedWasmString
 
-  ConfigureContext = distinct ptr WasmInternalConfContext
-  VmContext = distinct ptr WasmVmContext
+  ## Contexts only using `Context` suffix if the type would be commonly ambiguous
+  ConfigureContext* = distinct ptr WasmConfContext
+  VmContext* = distinct ptr WasmVmContext
+  MemoryContext* = distinct ptr WasmMemoryInstanceContext
+  FunctionInst* = distinct ptr WasmFunctionInstContext
+  FunctionType* = distinct ptr FunctionTypeContext
+
   HostRegistration* = enumwasmedgehostregistration
   ValType* = enumwasmedgevaltype
-  FunctionType* = distinct ptr FunctionTypeContext
+  WasmParamList* = ptr UncheckedArray[WasmValue]
+
+  HostProc*[T: ptr or ref] = proc(data: T, mem: MemoryContext, params, returns: WasmParamList): WasmResult ## If using `ref` ensure you `GcRef`
 
 proc `=destroy`(str: var WasmString) =
   if str.distinctBase.length > 0 and str.distinctBase.buf != nil:
     stringDelete(WasmInternalString str)
 
 proc `=destroy`(conf: var ConfigureContext) =
-  if (ptr WasmInternalConfContext)(conf) != nil:
-    configureDelete((ptr WasmInternalConfContext)(conf))
+  if conf.distinctBase != nil:
+    configureDelete(conf.distinctBase)
 
 proc `=destroy`(vm: var VmContext) =
   if vm.distinctBase != nil:
@@ -77,10 +90,10 @@ proc vmCreate*(c: var ConfigureContext): VmContext = VmContext(c.distinctBase.vm
 proc add*(c: var ConfigureContext, host: HostRegistration) = c.distinctBase.configureAddHostRegistration(host)
 
 
-template isOk*(res: Result): bool = resultOk(res)
-template isBad*(res: Result): bool = not isOk(res)
-template msg*(res: Result): cstring = resultGetMessage(res)
-template code*(res: Result): uint32 = resultGetCode(res)
+template isOk*(res: WasmResult): bool = resultOk(res)
+template isBad*(res: WasmResult): bool = not isOk(res)
+template msg*(res: WasmResult): cstring = resultGetMessage(res)
+template code*(res: WasmResult): uint32 = resultGetCode(res)
 
 
 template wasmValue*(i: int32): WasmValue = valueGenI32(i)
@@ -135,7 +148,7 @@ proc `==`*(a: string, b: WasmStrings): bool = stringIsEqual(unmanagedWasmString(
 proc `==`*(a: WasmStrings, b: string): bool = stringIsEqual(a.distinctBase, unmanagedWasmString(b).distinctBase)
 
 
-template checkResult*(res: Result, excpt: typedesc[WasmError]) =
+template checkResult*(res: WasmResult, excpt: typedesc[WasmError]) =
   if res.isBad:
     raise (ref excpt)(msg: $res.msg, code: res.code)
 
@@ -150,7 +163,6 @@ proc validate*(vm: var VmContext) =
 proc instantiate*(vm: var VMContext) =
   let res = vm.distinctBase.vmInstantiate()
   checkResult(res, WasmInstantiationError)
-
 
 proc execute*(vm: var VmContext, name: WasmStrings, args, results: var openArray[WasmValue]) =
   let res = vm.distinctBase.vmExecute(WasmInternalString(name), args[0].addr, args.len.uint32, results[0].addr, results.len.uint32)
@@ -192,3 +204,12 @@ iterator params*(funcType: FunctionType): ValType =
   for paramType in paramTypes:
     yield paramType
 
+proc hookFunction*[T](params, results: openArray[ValType], prc: HostProc[T], data: T, cost = 0i32): FunctionInst =
+  let hostFType =
+    if params.len == 0 and results.len == 0:
+      functionTypeCreate(nil, 0, nil, 0)
+    elif params.len == 0:
+      functionTypeCreate(nil, 0, results[0].addr, results.len)
+    else:
+      functionTypeCreate(params[0].addr, params.len.uint32 nil, 0)
+  FunctionInst functionInstanceCreate(hostFtype, prc, data, cost)

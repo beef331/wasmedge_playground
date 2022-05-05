@@ -1,3 +1,6 @@
+*
+!*.*
+!*/
 *.wasm
 *.out
 *.nim.kate-swp
