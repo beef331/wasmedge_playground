@@ -39,10 +39,12 @@ when wasmedgePath.len > 0: # Only add link path if we've data
 
 type
   WasmTypes* = int32 or float32 or int64 or float64
-  WasmLoadError* = object of CatchableError
-  WasmValidationError* = object of CatchableError
-  WasmInstantiationError* = object of CatchableError
-  WasmExecutionError* = object of CatchableError
+  WasmError* = object of CatchableError
+    code*: uint32
+  WasmLoadError* = object of WasmError
+  WasmValidationError* = object of WasmError
+  WasmInstantiationError* = object of WasmError
+  WasmExecutionError* = object of WasmError
 
   ## String Types
   WasmString* = distinct WasmInternalString
@@ -76,6 +78,8 @@ proc add*(c: var ConfigureContext, host: HostRegistration) = c.distinctBase.conf
 template isOk*(res: Result): bool = resultOk(res)
 template isBad*(res: Result): bool = not isOk(res)
 template msg*(res: Result): cstring = resultGetMessage(res)
+template code*(res: Result): uint32 = resultGetCode(res)
+
 
 template wasmValue*(i: int32): WasmValue = valueGenI32(i)
 template wasmValue*(i: int64): WasmValue = valueGenI64(i)
@@ -112,31 +116,33 @@ proc `==`*(a: string, b: WasmStrings): bool = stringIsEqual(unmanagedWasmString(
 proc `==`*(a: WasmStrings, b: string): bool = stringIsEqual(a.distinctBase, unmanagedWasmString(b).distinctBase)
 
 
+template checkResult*(res: Result, excpt: typedesc[WasmError]) =
+  if res.isBad:
+    raise (ref excpt)(msg: $res.msg, code: res.code)
+
 proc loadWasmFromFile*(vm: var VmContext, file: string or cstring) =
   let res = vm.distinctBase.vmLoadWasmFromFile(file)
-  if res.isBad:
-    raise newException(WasmLoadError, $res.msg)
+  checkResult(res, WasmLoadError)
 
 proc validate*(vm: var VmContext) =
   let res = vm.distinctBase.vmValidate()
-  if res.isBad:
-    raise newException(WasmValidationError, $res.msg)
+  checkResult(res, WasmValidationError)
 
 proc instantiate*(vm: var VMContext) =
   let res = vm.distinctBase.vmInstantiate()
-  if res.isBad:
-    raise newException(WasmInstantiationError, $res.msg)
+  checkResult(res, WasmInstantiationError)
+
 
 proc execute*(vm: var VmContext, name: WasmStrings, args, results: var openArray[WasmValue]) =
   let res = vm.distinctBase.vmExecute(WasmInternalString(name), args[0].addr, args.len.uint32, results[0].addr, results.len.uint32)
-  if res.isBad:
-    raise newException(WasmExecutionError, $res.msg)
+  checkResult(res, WasmExecutionError)
+
 
 proc execute*(vm: var VmContext, name: string, args, results: var openArray[WasmValue]) =
   let funcName = unmanagedWasmString(name)
   let res = vm.distinctBase.vmExecute(WasmInternalString(funcName), args[0].addr, args.len.uint32, results[0].addr, results.len.uint32)
-  if res.isBad:
-    raise newException(WasmExecutionError, $res.msg)
+  checkResult(res, WasmExecutionError)
+
 
 iterator functionNames*(vm: VmContext, count = 128): UnmanagedWasmString =
   ## yields the function names for `count` functions in the VM
