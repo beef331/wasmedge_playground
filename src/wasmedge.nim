@@ -96,11 +96,11 @@ proc getValue*[T: WasmTypes](val: WasmValue): T =
 
 template wasmString*(s: string): WasmString = WasmString stringCreateByCstring(s.cstring)
 template wasmString*(s: cstring): WasmString = WasmString stringCreateByCstring(s)
-proc wasmString*(oa: openarray[char or byte]): WasmString = stringCreateByBuffer(cast[cstring](oa[0].addr), oa.len - 1)
+proc wasmString*(oa: openarray[char or byte]): WasmString = WasmString stringCreateByBuffer(cast[cstring](oa[0].addr), uint32(oa.len))
 
-template unmanagedWasmString*(s: string): UnmanagedWasmString = UnmanagedWasmString wasmString(s)
-template unmanagedWasmString*(s: cstring, len: uint32): UnmanagedWasmString = UnmanagedWasmString wasmString(s[0], len)
-proc unmanagedWasmString*(oa: openarray[char or byte]): UnmanagedWasmString = UnmanagedWasmString(wasmString(oa))
+template unmanagedWasmString*(s: string): UnmanagedWasmString = UnmanagedWasmString stringWrap(s.cstring, uint32 s.len)
+template unmanagedWasmString*(s: cstring, len: uint32): UnmanagedWasmString = UnmanagedWasmString stringWrap(s, len)
+proc unmanagedWasmString*(oa: openarray[char or byte]): UnmanagedWasmString = UnmanagedWasmString(stringWrap(oa[0].addr, uint32 oa.len))
 
 proc `$`*(s: WasmStrings): string =
   result.setlen(256)

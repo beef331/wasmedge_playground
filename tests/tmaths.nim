@@ -25,6 +25,7 @@ test "Maths Test":
   check results[0].getValue[: int32] == 40
   vmCtx.execute("multiply", params, results)
   check results[0].getValue[: int32] == 300
+
   let allFuncs = collect(for name in vmCtx.functionNames: $name)
   for x in ["add", "multiply"]:
     assert x in allFuncs
