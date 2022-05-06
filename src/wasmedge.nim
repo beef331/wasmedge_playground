@@ -21,7 +21,9 @@ proc removeWasmEdge(name, kind, partof: string): string =
   of "MemoryInstanceContext":
     result = "WasmMemoryInstanceContext"
   of "FunctionInstanceContext":
-    result = "WasmFunctionInstContext"
+    result = "WasmFunctionInstanceContext"
+  of "ModuleInstanceContext":
+    result = "WasmModuleInstanceContext"
   of "Result":
     result = "WasmResult"
   else: discard
@@ -63,7 +65,8 @@ type
   ConfigureContext* = distinct ptr WasmConfContext
   VmContext* = distinct ptr WasmVmContext
   MemoryContext* = distinct ptr WasmMemoryInstanceContext
-  FunctionInst* = distinct ptr WasmFunctionInstContext
+#  ModuleContext* = distinct ptr WasmModuleInstanceContext
+  FunctionInst* = distinct ptr WasmFunctionInstanceContext ## Probably need two versions like WasmString
   FunctionType* = distinct ptr FunctionTypeContext
 
   HostRegistration* = enumwasmedgehostregistration
@@ -76,14 +79,14 @@ proc `=destroy`(str: var WasmString) =
   if str.distinctBase.length > 0 and str.distinctBase.buf != nil:
     stringDelete(WasmInternalString str)
 
-proc `=destroy`(conf: var ConfigureContext) =
-  if conf.distinctBase != nil:
-    configureDelete(conf.distinctBase)
+template makeDestructor(t: typedesc, procName: untyped): untyped {.dirty.} =
+  proc `=destroy`(toDestroy: var t) =
+    if toDestroy.distinctBase != nil:
+      procName(toDestroy.distinctBase)
 
-proc `=destroy`(vm: var VmContext) =
-  if vm.distinctBase != nil:
-    vmDelete(vm.distinctBase)
-
+makeDestructor(ConfigureContext, configureDelete)
+makeDestructor(VmContext, vmDelete)
+#makeDestructor(ModuleContext, moduleInstanceDelete)
 
 proc createConfigureContext*(): ConfigureContext = ConfigureContext configureCreate()
 proc vmCreate*(c: var ConfigureContext): VmContext = VmContext(c.distinctBase.vmCreate(nil))
