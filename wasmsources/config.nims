@@ -22,3 +22,4 @@ let outputName = projectName() & ".wasm"
 switch("passL", "--no-entry -sSTANDALONE_WASM=1")
 switch("passL", "-o " & outputName)
 
+--define:yardanicoSucks:on
