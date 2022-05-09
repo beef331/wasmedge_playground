@@ -73,7 +73,7 @@ type
   UnmanagedFunctionType* = distinct ptr WasmFunctionTypeContext ## This isnt owned by us we dont destroy it
 
   FunctionTypes* = FunctionType or UnmanagedFunctionType
-  FunctionInsts* = FunctionType or UnmanagedFunctionInst
+  FunctionInsts* = FunctionInst or UnmanagedFunctionInst
 
   ImportType* = distinct ptr WasmImportTypeContext
   ExportType* = distinct ptr WasmExportTypeContext
@@ -83,7 +83,7 @@ type
   ValType* = enumwasmedgevaltype
   WasmParamList* = ptr UncheckedArray[WasmValue]
 
-  HostProc*[T: ptr or ref] = proc(data: T, mem: MemoryContext, params, returns: WasmParamList): WasmResult ## If using `ref` ensure you `GcRef`
+  HostProc*[T: ptr or ref or pointer] = proc(data: T, mem: MemoryContext, params, returns: WasmParamList): WasmResult {.cdecl.}## If using `ref` ensure you `GcRef`
 
 proc `=destroy`(str: var WasmString) =
   if str.distinctBase.length > 0 and str.distinctBase.buf != nil:
@@ -114,6 +114,17 @@ proc createLoader*(c: var ConfigureContext): LoaderContext = LoaderContext c.dis
 proc createExecutor*(c: var ConfigureContext): ExecutorContext = ExecutorContext c.distinctBase.executorCreate(nil)
 proc createExecutor*(c: var ConfigureContext, stats: var StatisticsContext): ExecutorContext = ExecutorContext c.distinctBase.executorCreate(stats.distinctBase)
 proc createValidator*(c: var ConfigureContext): ValidatorContext = ValidatorContext c.distinctBase.validatorCreate()
+
+proc create*(_: typedesc[FunctionType], params, results: openArray[ValType]): FunctionType =
+  if params.len > 0 and results.len > 0:
+    FunctionType functionTypeCreate(params[0].unsafeaddr, params.len.uint32, results[0].unsafeaddr, results.len.uint32)
+  elif params.len > 0:
+    FunctionType functionTypeCreate(params[0].unsafeaddr, params.len.uint32, nil, 0)
+  else:
+    FunctionType functionTypeCreate(nil, 0, results[0].unsafeaddr, results.len.uint32)
+
+proc createInst*[T](typ: FunctionType, prc: HostProc[T]): FunctionInst =
+  FunctionInst typ.distinctBase.functionInstanceCreate(cast[HostFunct](prc), nil, 0)
 
 proc create*(_: typedesc[ModuleContext], name: WasmStrings): ModuleContext = ModuleContext moduleInstanceCreate(name.distinctBase)
 proc create*(_: typedesc[ModuleContext], name: openarray[char]): ModuleContext = ModuleContext moduleInstanceCreate(name.unmanagedWasmString)
@@ -231,6 +242,7 @@ proc register*(executor: var ExecutorContext, module: var ModuleContext, store: 
   let res = executor.distinctBase.executorRegister(module.distinctBase, store.distinctBase, ast.distinctBase, modName)
   checkResult(res, WasmImportError)
 
+#[
 proc hookFunction*[T](params, results: openArray[ValType], prc: HostProc[T], data: T, cost = 0i32): FunctionInst =
   let hostFType =
     if params.len == 0 and results.len == 0:
@@ -240,6 +252,10 @@ proc hookFunction*[T](params, results: openArray[ValType], prc: HostProc[T], dat
     else:
       functionTypeCreate(params[0].addr, params.len.uint32 nil, 0)
   FunctionInst functionInstanceCreate(hostFtype, prc, data, cost)
+]#
+
+proc addFunction*(module: var ModuleContext, funcName: WasmStrings, function: FunctionInst) =
+  module.distinctBase.moduleInstanceAddFunction(funcName.distinctBase, function.distinctBase)
 
 proc findFunction*(module: var ModuleContext, name: WasmStrings): UnmanagedFunctionInst =
   UnmanagedFunctionInst module.distinctBase.moduleInstanceFindFunction(name.distinctBase)
@@ -252,7 +268,6 @@ proc invoke*(exec: var ExecutorContext, funcInst: UnmanagedFunctionInst, args, r
   assert funcInst.distinctBase != nil
   let res = exec.distinctBase.executorInvoke(funcInst.distinctBase, args[0].addr, args.len.uint32, results[0].addr, results.len.uint32)
   checkResult(res, WasmExecutionError)
-
 
 proc initWasi*(module: var ModuleContext) =
   module.distinctBase.moduleInstanceInitWasi(nil, 0, nil, 0, nil, 0)
