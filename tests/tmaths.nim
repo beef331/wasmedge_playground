@@ -31,25 +31,23 @@ test "VmExecute Math Test":
     check x in allFuncs
 
 test "Executor Math Test":
-  var config = ConfigureContext.create()
-  config.add hostRegistrationWasi
-
   var
+    config = ConfigureContext.create()
     stats = StatisticsContext.create()
     loader = config.createLoader()
     validator = config.createValidator()
     executor = config.createExecutor(stats)
     ast: AstModuleContext
-    module: ModuleContext
+    wasiModule = createWasiModule()
+
   loader.parseFromFile(ast, "maths.wasm")
   validator.validate(ast)
 
   var store = StoreContext.create()
+  executor.registerImport(store, wasiModule)
+  var module = ModuleContext.default
   executor.instantiate(module, store, ast)
 
-  let allFuncs = collect(for name in module.functionNames: $name)
-  for x in ["add", "multiply"]:
-    check x in allFuncs
 
   let
     addFunc = module.findFunction(wasmString"add")
@@ -61,5 +59,9 @@ test "Executor Math Test":
   check results[0].getValue[: int32] == 40
   executor.invoke(mulFunc, params, results)
   check results[0].getValue[: int32] == 300
+
+  let allFuncs = collect(for name in module.functionNames: $name)
+  for x in ["add", "multiply"]:
+    check x in allFuncs
 
 

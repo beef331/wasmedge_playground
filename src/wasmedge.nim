@@ -117,10 +117,10 @@ proc createValidator*(c: var ConfigureContext): ValidatorContext = ValidatorCont
 
 proc create*(_: typedesc[ModuleContext], name: WasmStrings): ModuleContext = ModuleContext moduleInstanceCreate(name.distinctBase)
 proc create*(_: typedesc[ModuleContext], name: openarray[char]): ModuleContext = ModuleContext moduleInstanceCreate(name.unmanagedWasmString)
-
+proc createWasiModule*(): ModuleContext = ModuleContext moduleInstanceCreateWasi(nil, 0, nil, 0, nil, 0)
 
 proc add*(c: var ConfigureContext, host: HostRegistration) = c.distinctBase.configureAddHostRegistration(host)
-
+proc has*(c: var ConfigureContext, host: HostRegistration): bool = c.distinctBase.configureHasHostRegistration(host)
 
 template isOk*(res: WasmResult): bool = resultOk(res)
 template isBad*(res: WasmResult): bool = not isOk(res)
@@ -187,11 +187,11 @@ template checkResult*(res: WasmResult, excpt: typedesc[WasmError]) =
     raise (ref excpt)(msg: $res.msg, code: res.code)
 
 proc parseFromFile*(loader: var LoaderContext, ast: var AstModuleContext, name: openarray[char])=
-  let res = loader.distinctBase.loaderParseFromFile(ast.distinctBase.addr, name[0].addr)
+  let res = loader.distinctBase.loaderParseFromFile(ast.distinctBase.addr, name[0].unsafeaddr)
   checkResult(res, WasmLoadError)
 
 proc parseFromBuffer*(loader: var LoaderContext, ast: var AstModuleContext, buffer: openarray[char]) =
-  let res = loader.distinctBase.loaderParseFromBuffer(ast.distinctBase.addr, cast[ptr uint8](buffer[0].addr), buffer.len.uint32)
+  let res = loader.distinctBase.loaderParseFromBuffer(ast.distinctBase.addr, cast[ptr uint8](buffer[0].unsafeaddr), buffer.len.uint32)
   checkResult(res, WasmLoadError)
 
 proc loadWasmFromFile*(vm: var VmContext, file: string or cstring) =
@@ -210,7 +210,7 @@ proc instantiate*(vm: var VMContext) =
   let res = vm.distinctBase.vmInstantiate()
   checkResult(res, WasmInstantiationError)
 
-proc instantiate*(executor: var ExecutorContext, module: var ModuleContext, store: var StoreContext, ast: AstModuleContext) =
+proc instantiate*(executor: var ExecutorContext, module: var ModuleContext, store: StoreContext, ast: AstModuleContext) =
   let res = executor.distinctBase.executorInstantiate(module.distinctBase.addr, store.distinctBase, ast.distinctBase)
   checkResult(res, WasmInstantiationError)
 
@@ -248,11 +248,14 @@ proc funcType*(funcInst: var UnmanagedFunctionInst): UnmanagedFunctionType =
   assert funcInst.distinctBase != nil
   UnmanagedFunctionType funcInst.distinctBase.functionInstanceGetFunctionType()
 
-proc invoke*(exec: var ExecutorContext, funcInst: UnmanagedFunctionInst, args, results: openarray[WasmValue]) =
+proc invoke*(exec: var ExecutorContext, funcInst: UnmanagedFunctionInst, args, results: var openarray[WasmValue]) =
   assert funcInst.distinctBase != nil
   let res = exec.distinctBase.executorInvoke(funcInst.distinctBase, args[0].addr, args.len.uint32, results[0].addr, results.len.uint32)
   checkResult(res, WasmExecutionError)
 
+
+proc initWasi*(module: var ModuleContext) =
+  module.distinctBase.moduleInstanceInitWasi(nil, 0, nil, 0, nil, 0)
 
 iterator functionNames*(vm: VmContext, count = 128): UnmanagedWasmString =
   ## yields the function names for `count` functions in the VM
@@ -301,7 +304,7 @@ iterator functionNames*(module: var ModuleContext): UnmanagedWasmString =
   let funcNum = module.distinctBase.moduleInstanceListFunctionLength()
   var funcNames = newSeq[UnmanagedWasmString](funcNum)
   let got = int module.distinctBase.moduleInstanceListFunction(funcNames[0].distinctBase.addr, funcNum)
-  for x in funcNames.toOpenArray(0, got):
+  for x in funcNames.toOpenArray(0, got - 1):
     yield x
 
 iterator params*(funcType: FunctionType): ValType =
