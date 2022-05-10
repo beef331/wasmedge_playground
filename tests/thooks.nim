@@ -40,7 +40,6 @@ test "HostFunctions":
 
   executor.invoke(funcName, args, results)
 
-  var myTypeFunc = module.findFunction(wasmString"getMyType")
   var procDefs = "\n"
   for funcName in module.functionNames:
     var myTypeFunc = module.findFunction(funcName)
@@ -52,22 +51,35 @@ test "HostFunctions":
       res.add " "
     if res[^1] == ' ':
       res.setlen(res.high)
-    res.add ")\n"
+    res.add ")"
+
+    var hasResults = false
+    for resultTyp in myTypeFunc.funcType.returns:
+      if not hasResults:
+        hasResults = true
+        res.add ": ("
+      res.add $resultTyp
+      res.add " "
+    if hasResults:
+      res.setLen(res.high)
+      res.add ")"
+
+    res.add "\n"
     procDefs.add res
   const expected = """
 
-proc __errno_location()
+proc __errno_location(): (valtypei32)
 proc _initialize()
-proc emscripten_builtin_memalign(valtypei32 valtypei32)
-proc emscripten_stack_get_base()
-proc emscripten_stack_get_end()
-proc emscripten_stack_get_free()
+proc emscripten_builtin_memalign(valtypei32 valtypei32): (valtypei32)
+proc emscripten_stack_get_base(): (valtypei32)
+proc emscripten_stack_get_end(): (valtypei32)
+proc emscripten_stack_get_free(): (valtypei32)
 proc emscripten_stack_init()
-proc getMyType(valtypei32 valtypei32)
+proc getFloat(valtypei32 valtypei32): (valtypef32)
 proc indirectCall(valtypei32 valtypei32)
-proc stackAlloc(valtypei32)
+proc stackAlloc(valtypei32): (valtypei32)
 proc stackRestore(valtypei32)
-proc stackSave()
+proc stackSave(): (valtypei32)
 """
   check expected == procDefs
 
