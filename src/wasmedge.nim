@@ -296,35 +296,50 @@ iterator functionNameTypes*(vm: VmContext, count = 128): (UnmanagedWasmString, F
 
 iterator importTypes*(ast: var AstModuleContext): ImportType =
   let importNum = ast.distinctBase.astModulelistImportsLength()
-  var implTypes = newSeq[ImportType](importNum)
-  let got = int ast.distinctBase.astModuleListImports(implTypes[0].distinctBase.addr, importNum)
-  for x in implTypes.toOpenArray(0, got):
-    yield x
+  if importNum > 0:
+    var implTypes = newSeq[ImportType](importNum)
+    let got = int ast.distinctBase.astModuleListImports(implTypes[0].distinctBase.addr, importNum)
+    for x in implTypes.toOpenArray(0, got):
+      yield x
 
 iterator exportTypes*(ast: var AstModuleContext): ExportType =
   let exportNum = ast.distinctBase.astModulelistExportsLength()
-  var implTypes = newSeq[ExportType](exportNum)
-  let got = int ast.distinctBase.astModuleListExports(implTypes[0].distinctBase.addr, exportNum)
-  for x in implTypes.toOpenArray(0, got):
-    yield x
+  if exportNum > 0:
+    var implTypes = newSeq[ExportType](exportNum)
+    let got = int ast.distinctBase.astModuleListExports(implTypes[0].distinctBase.addr, exportNum)
+    for x in implTypes.toOpenArray(0, got):
+      yield x
 
 iterator modules*(store: var StoreContext): UnmanagedWasmString =
   let nameCount = store.distinctBase.storeListModuleLength()
-  var modNames = newSeq[UnmanagedWasmString](nameCount)
-  let got = int store.distinctBase.storeListModule(modNames[0].distinctBase.addr, nameCount)
-  for x in modNames.toOpenArray(0, got):
-    yield x
+  if nameCount > 0:
+    var modNames = newSeq[UnmanagedWasmString](nameCount)
+    let got = int store.distinctBase.storeListModule(modNames[0].distinctBase.addr, nameCount)
+    for x in modNames.toOpenArray(0, got):
+      yield x
 
 iterator functionNames*(module: var ModuleContext): UnmanagedWasmString =
   let funcNum = module.distinctBase.moduleInstanceListFunctionLength()
-  var funcNames = newSeq[UnmanagedWasmString](funcNum)
-  let got = int module.distinctBase.moduleInstanceListFunction(funcNames[0].distinctBase.addr, funcNum)
-  for x in funcNames.toOpenArray(0, got - 1):
-    yield x
+  if funcNum > 0:
+    var funcNames = newSeq[UnmanagedWasmString](funcNum)
+    let got = int module.distinctBase.moduleInstanceListFunction(funcNames[0].distinctBase.addr, funcNum)
+    for x in funcNames.toOpenArray(0, got - 1):
+      yield x
 
-iterator params*(funcType: FunctionType): ValType =
+iterator params*(funcType: FunctionTypes): ValType =
   let paramCount = funcType.distinctBase.functionTypeGetParametersLength()
-  var paramTypes = newSeq[ValType](paramCount.int)
-  discard funcType.distinctBase.functionTypeGetParameters(paramTypes[0].addr, paramCount)
-  for paramType in paramTypes:
-    yield paramType
+  if paramCount > 0:
+    var paramTypes = newSeq[ValType](paramCount.int)
+    discard funcType.distinctBase.functionTypeGetParameters(paramTypes[0].addr, paramCount)
+    for paramType in paramTypes:
+      yield paramType
+
+iterator returns*(funcType: FunctionTypes): ValType =
+  assert funcType.distinctBase != nil
+  let retCount = funcType.distinctBase.functionTypeGetReturnsLength()
+  if retCount > 0:
+    var retTypes = newSeq[ValType](retCount.int)
+    discard funcType.distinctBase.functionTypeGetReturns(retTypes[0].addr, retCount)
+    for returnType in retTypes:
+      yield returnType
+

@@ -18,7 +18,7 @@ test "HostFunctions":
   executor.registerImport(store, wasiModule)
 
   proc myProc(data: pointer, mem: MemoryContext, params, returns: WasmParamList): WasmResult {.cdecl.} =
-    echo params[0].getValue[: int32](), " ", params[1].getValue[: int32]()
+    returns[0] = wasmValue(params[0].getValue[: int32]() * params[1].getValue[: int32]())
     WasmResult()
 
   var myModule = ModuleContext.create(wasmString"env")
@@ -39,5 +39,36 @@ test "HostFunctions":
   let funcName = module.findFunction(wasmString"indirectCall")
 
   executor.invoke(funcName, args, results)
+
+  var myTypeFunc = module.findFunction(wasmString"getMyType")
+  var procDefs = "\n"
+  for funcName in module.functionNames:
+    var myTypeFunc = module.findFunction(funcName)
+    var res = "proc "
+    res.add $funcName
+    res.add "("
+    for param in myTypeFunc.funcType.params:
+      res.add $param
+      res.add " "
+    if res[^1] == ' ':
+      res.setlen(res.high)
+    res.add ")\n"
+    procDefs.add res
+  const expected = """
+
+proc __errno_location()
+proc _initialize()
+proc emscripten_builtin_memalign(valtypei32 valtypei32)
+proc emscripten_stack_get_base()
+proc emscripten_stack_get_end()
+proc emscripten_stack_get_free()
+proc emscripten_stack_init()
+proc getMyType(valtypei32 valtypei32)
+proc indirectCall(valtypei32 valtypei32)
+proc stackAlloc(valtypei32)
+proc stackRestore(valtypei32)
+proc stackSave()
+"""
+  check expected == procDefs
 
 
