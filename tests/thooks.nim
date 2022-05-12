@@ -1,5 +1,11 @@
 import unittest
 import wasmedge
+
+
+type MyType = object
+  x, y, z: int32
+  w: float32
+
 test "HostFunctions":
   var
     config = ConfigureContext.create()
@@ -9,7 +15,6 @@ test "HostFunctions":
     executor = config.createExecutor(stats)
     ast: AstModuleContext
     wasiModule = createWasiModule()
-
   loader.parseFromFile(ast, "hooks.wasm")
   validator.validate(ast)
 
@@ -17,7 +22,7 @@ test "HostFunctions":
 
   executor.registerImport(store, wasiModule)
 
-  proc myProc(data: pointer, mem: MemoryContext, params, returns: WasmParamList): WasmResult {.cdecl.} =
+  proc myProc(data: pointer, mem: MemoryInst, params, returns: WasmParamList): WasmResult {.cdecl.} =
     returns[0] = wasmValue(params[0].getValue[: int32]() * params[1].getValue[: int32]())
     WasmResult()
 
@@ -31,6 +36,15 @@ test "HostFunctions":
 
   var module = ModuleContext.default
   executor.instantiate(module, store, ast)
+
+  var myType = MyType(x: 100, y: 1, z: 3, w: 30)
+  let
+    getMyType = module.findFunction(wasmString"getMyType")
+    myMemory = module.findMemory(wasmString"memory")
+  executor.invoke(getMyType)
+  myMemory.getData(myType)
+  check myType == MyType(x: 100, y: 300, z: 300, w: 15)
+
   var
     args = [wasmValue(10i32), wasmValue(11i32)]
     results = [WasmValue()]
@@ -76,11 +90,10 @@ proc emscripten_stack_get_end(): (valtypei32)
 proc emscripten_stack_get_free(): (valtypei32)
 proc emscripten_stack_init()
 proc getFloat(valtypei32 valtypei32): (valtypef32)
+proc getMyType()
 proc indirectCall(valtypei32 valtypei32)
 proc stackAlloc(valtypei32): (valtypei32)
 proc stackRestore(valtypei32)
 proc stackSave(): (valtypei32)
 """
   check expected == procDefs
-
-

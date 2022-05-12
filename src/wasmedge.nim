@@ -16,6 +16,8 @@ proc removeWasmEdge(name, kind, partof: string): string =
     result = "WasmValue"
   of "Result":
     result = "WasmResult"
+  of "Limit":
+    result = "WasmLimit"
   elif result.endsWith"Context":
     result = "Wasm" & result
   else: discard
@@ -46,6 +48,9 @@ type
   WasmInstantiationError* = object of WasmError
   WasmExecutionError* = object of WasmError
   WasmImportError* = object of WasmError
+  WasmMemorySetError* = object of WasmError
+  WasmMemoryGetError* = object of WasmError
+
 
   WasmReturnVal* = distinct WasmValue
 
@@ -59,13 +64,22 @@ type
   LoaderContext* = distinct ptr WasmLoaderContext
   AstModuleContext* = distinct ptr WasmAstModuleContext
   VmContext* = distinct ptr WasmVmContext
-  MemoryContext* = distinct ptr WasmMemoryInstanceContext
   ModuleContext* = distinct ptr WasmModuleInstanceContext
   ValidatorContext* = distinct ptr WasmValidatorContext
   StatisticsContext* = distinct ptr WasmStatisticsContext
   ExecutorContext* = distinct ptr WasmExecutorContext
   StoreContext* = distinct ptr WasmStoreContext
 
+  GlobalType* = distinct ptr WasmGlobalTypeContext
+  GlobalInst* = distinct ptr WasmGlobalInstancecontext
+
+  MemoryType* = distinct ptr WasmMemoryTypeContext
+  UnmangedMemoryType* = distinct ptr WasmMemoryTypeContext
+  MemoryTypes* = MemoryType or UnmangedMemoryType
+
+  MemoryInst* = distinct ptr WasmMemoryInstanceContext
+  UnmanagedMemoryInst* = distinct ptr WasmMemoryInstanceContext
+  MemoryInsts* = MemoryInst or UnmanagedMemoryInst
 
   FunctionInst* = distinct ptr WasmFunctionInstanceContext
   UnmanagedFunctionInst* = distinct ptr WasmFunctionInstanceContext ## This isnt owned by us we dont destroy it
@@ -81,9 +95,10 @@ type
 
   HostRegistration* = enumwasmedgehostregistration
   ValType* = enumwasmedgevaltype
+  ProposalType* = enumwasmedgeproposal
   WasmParamList* = ptr UncheckedArray[WasmValue]
 
-  HostProc*[T: ptr or ref or pointer] = proc(data: T, mem: MemoryContext, params, returns: WasmParamList): WasmResult {.cdecl.}## If using `ref` ensure you `GcRef`
+  HostProc*[T: ptr or ref or pointer] = proc(data: T, mem: MemoryInst, params, returns: WasmParamList): WasmResult {.cdecl.}## If using `ref` ensure you `GcRef`
 
 proc `=destroy`(str: var WasmString) =
   if str.distinctBase.length > 0 and str.distinctBase.buf != nil:
@@ -103,6 +118,10 @@ makeDestructor(LoaderContext, loaderDelete)
 makeDestructor(ValidatorContext, validatorDelete)
 makeDestructor(StatisticsContext, statisticsDelete)
 makeDestructor(ExecutorContext, executorDelete)
+makeDestructor(MemoryType, memoryTypeDelete)
+makeDestructor(MemoryInst, memoryInstanceDelete)
+makeDestructor(GlobalType, globalTypeDelete)
+makeDestructor(GlobalInst, globalInstanceDelete)
 
 
 proc create*(_: typedesc[ConfigureContext]): ConfigureContext = ConfigureContext configureCreate()
@@ -132,6 +151,8 @@ proc createWasiModule*(): ModuleContext = ModuleContext moduleInstanceCreateWasi
 
 proc add*(c: var ConfigureContext, host: HostRegistration) = c.distinctBase.configureAddHostRegistration(host)
 proc has*(c: var ConfigureContext, host: HostRegistration): bool = c.distinctBase.configureHasHostRegistration(host)
+proc add*(c: var ConfigureContext, prop: ProposalType) = c.distinctBase.configureAddProposal(prop)
+
 
 template isOk*(res: WasmResult): bool = resultOk(res)
 template isBad*(res: WasmResult): bool = not isOk(res)
@@ -143,6 +164,7 @@ template wasmValue*(i: int32): WasmValue = valueGenI32(i)
 template wasmValue*(i: int64): WasmValue = valueGenI64(i)
 template wasmValue*(f: float32): WasmValue = valueGenF32(f)
 template wasmValue*(f: float64): WasmValue = valueGenF64(f)
+template wasmValue*[T](t: var T): WasmValue = valueGenExternRef(t.addr)
 
 proc getValue*[T: WasmTypes](val: WasmValue): T =
   when T is int32:
@@ -197,6 +219,47 @@ template checkResult*(res: WasmResult, excpt: typedesc[WasmError]) =
   if res.isBad:
     raise (ref excpt)(msg: $res.msg, code: res.code)
 
+
+# Memory API
+proc create*(_: typedesc[MemoryType], limit: WasmLimit): MemoryType = MemoryType memoryTypeCreate(limit)
+proc createInst*(memType: var MemoryType): MemoryInst = MemoryInst memType.distinctBase.memoryInstanceCreate
+proc createUnmanagedInst*(memType: var MemoryType): UnmanagedMemoryInst = UnmanagedMemoryInst memType.distinctBase.memoryInstanceCreate
+
+
+proc setData*(memoryInst: var MemoryInsts, data: pointer, offset: uint32, len: uint32) =
+  let res = memoryInst.distinctBase.memoryInstanceSetData(cast[ptr uint8](data), offset, len)
+  checkResult(res, WasmMemorySetError)
+
+proc setData*[T](memoryInst: var MemoryInsts, data: openArray[T]) =
+  let res = memoryInst.distinctBase.memoryInstanceSetData(cast[ptr uint8](data[0].unsafeaddr), 0, (sizeof(T) * data[0].unsafeaddr).uint32)
+  checkResult(res, WasmMemorySetError)
+
+proc setData*[T: not openarray](memoryInst: var MemoryInsts, data: T) =
+  let res = memoryInst.distinctBase.memoryInstanceSetData(cast[ptr uint8](data.unsafeaddr), 0, sizeof(T).uint32)
+  checkResult(res, WasmMemorySetError)
+
+proc getData*(memoryInst: MemoryInsts, data: pointer, offset: uint32, len: uint32) =
+  let res = memoryInst.distinctBase.memoryInstanceGetData(cast[ptr uint8](data), offset, len)
+  checkResult(res, WasmMemoryGetError)
+
+proc getData*[T](memoryInst: MemoryInsts, data: var openArray[T]) =
+  let res = memoryInst.distinctBase.memoryInstanceGetData(cast[ptr uint8](data[0].addr), 0, data.len.uint32 * sizeof(T))
+  checkResult(res, WasmMemoryGetError)
+
+proc getData*[T: not openarray](memoryInst: MemoryInsts, data: var T) =
+  let res = memoryInst.distinctBase.memoryInstanceGetData(cast[ptr uint8](data.addr), 0, uint32 sizeof(T))
+  checkResult(res, WasmMemoryGetError)
+
+proc getPointer*(memoryInst: var MemoryInsts): pointer = memoryInst.distinctBase.memoryInstanceGetPointer(0, 0)
+proc getPointer*(memoryInst: var MemoryInsts, len, offset: uint32): pointer = memoryInst.distinctBase.memoryInstanceGetPointer(len, offset)
+
+proc add*(module: var ModuleContext, memory: sink UnmanagedMemoryInst, name: WasmStrings) =
+  module.distinctBase.moduleInstanceAddMemory(name.distinctBase, memory.distinctBase)
+
+proc findMemory*(module: var ModuleContext, name: WasmStrings): UnmanagedMemoryInst =
+  UnmanagedMemoryInst module.distinctBase.moduleInstanceFindMemory(name.distinctBase)
+
+# Loader API
 proc parseFromFile*(loader: var LoaderContext, ast: var AstModuleContext, name: openarray[char])=
   let res = loader.distinctBase.loaderParseFromFile(ast.distinctBase.addr, name[0].unsafeaddr)
   checkResult(res, WasmLoadError)
@@ -269,6 +332,29 @@ proc invoke*(exec: var ExecutorContext, funcInst: UnmanagedFunctionInst, args, r
   let res = exec.distinctBase.executorInvoke(funcInst.distinctBase, args[0].addr, args.len.uint32, results[0].addr, results.len.uint32)
   checkResult(res, WasmExecutionError)
 
+proc invoke*(exec: var ExecutorContext, funcInst: UnmanagedFunctionInst, args: var openarray[WasmValue]) =
+  assert funcInst.distinctBase != nil
+  let res = exec.distinctBase.executorInvoke(funcInst.distinctBase, args[0].addr, args.len.uint32, nil, 0)
+  checkResult(res, WasmExecutionError)
+
+proc invoke*(exec: var ExecutorContext, funcInst: UnmanagedFunctionInst, results: var openarray[WasmValue]) =
+  assert funcInst.distinctBase != nil
+  let res = exec.distinctBase.executorInvoke(funcInst.distinctBase, nil, 0, results[0].addr, results.len.uint32)
+  checkResult(res, WasmExecutionError)
+
+proc invoke*(exec: var ExecutorContext, funcInst: UnmanagedFunctionInst) =
+  assert funcInst.distinctBase != nil
+  let res = exec.distinctBase.executorInvoke(funcInst.distinctBase, nil, 0, nil, 0)
+  checkResult(res, WasmExecutionError)
+
+
+func name*(importType: ImportType): UnmanagedWasmString =
+  UnmanagedWasmString importType.distinctBase.importTypeGetExternalName()
+
+func name*(exportType: ExportType): UnmanagedWasmString =
+  UnmanagedWasmString exportType.distinctBase.exportTypeGetExternalName()
+
+
 proc initWasi*(module: var ModuleContext) =
   module.distinctBase.moduleInstanceInitWasi(nil, 0, nil, 0, nil, 0)
 
@@ -299,7 +385,7 @@ iterator importTypes*(ast: var AstModuleContext): ImportType =
   if importNum > 0:
     var implTypes = newSeq[ImportType](importNum)
     let got = int ast.distinctBase.astModuleListImports(implTypes[0].distinctBase.addr, importNum)
-    for x in implTypes.toOpenArray(0, got):
+    for x in implTypes.toOpenArray(0, got - 1):
       yield x
 
 iterator exportTypes*(ast: var AstModuleContext): ExportType =
@@ -307,7 +393,15 @@ iterator exportTypes*(ast: var AstModuleContext): ExportType =
   if exportNum > 0:
     var implTypes = newSeq[ExportType](exportNum)
     let got = int ast.distinctBase.astModuleListExports(implTypes[0].distinctBase.addr, exportNum)
-    for x in implTypes.toOpenArray(0, got):
+    for x in implTypes.toOpenArray(0, got - 1):
+      yield x
+
+iterator globalNames*(module: var ModuleContext): UnmanagedWasmString =
+  let globalNum = module.distinctBase.moduleInstanceListGlobalLength()
+  if globalNum > 0:
+    var globalNames = newSeq[UnmanagedWasmString](globalNum)
+    let got = int module.distinctBase.moduleInstanceListGlobal(globalNames[0].distinctBase.addr, globalNum)
+    for x in globalNames.toOpenArray(0, got - 1):
       yield x
 
 iterator modules*(store: var StoreContext): UnmanagedWasmString =
@@ -315,7 +409,7 @@ iterator modules*(store: var StoreContext): UnmanagedWasmString =
   if nameCount > 0:
     var modNames = newSeq[UnmanagedWasmString](nameCount)
     let got = int store.distinctBase.storeListModule(modNames[0].distinctBase.addr, nameCount)
-    for x in modNames.toOpenArray(0, got):
+    for x in modNames.toOpenArray(0, got - 1):
       yield x
 
 iterator functionNames*(module: var ModuleContext): UnmanagedWasmString =
