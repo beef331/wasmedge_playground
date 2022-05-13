@@ -71,7 +71,12 @@ type
   StoreContext* = distinct ptr WasmStoreContext
 
   GlobalType* = distinct ptr WasmGlobalTypeContext
+  UnmanagedGlobalType* = distinct ptr WasmGlobalTypeContext
+  GlobalTypes* = GlobalType or UnmanagedGlobalType
+
   GlobalInst* = distinct ptr WasmGlobalInstancecontext
+  UnmanagedGlobalInst* = distinct ptr WasmGlobalInstancecontext
+  GlobalInsts* = GlobalInst or UnmanagedGlobalInst
 
   MemoryType* = distinct ptr WasmMemoryTypeContext
   UnmangedMemoryType* = distinct ptr WasmMemoryTypeContext
@@ -107,7 +112,12 @@ proc `=destroy`(str: var WasmString) =
 template makeDestructor(t: typedesc, procName: untyped): untyped {.dirty.} =
   proc `=destroy`(toDestroy: var t) =
     if toDestroy.distinctBase != nil:
+      when defined(wasmEdgeDebugDestructors):
+        echo "destroying: ", typeof(toDestroy)
       procName(toDestroy.distinctBase)
+
+template errorCopy(t: typedesc): untyped {.dirty.} =
+  proc copy(a: var t, b: t) {.error.}
 
 # Consider making a macro, probably moot though
 makeDestructor(ConfigureContext, configureDelete)
@@ -122,6 +132,12 @@ makeDestructor(MemoryType, memoryTypeDelete)
 makeDestructor(MemoryInst, memoryInstanceDelete)
 makeDestructor(GlobalType, globalTypeDelete)
 makeDestructor(GlobalInst, globalInstanceDelete)
+
+errorCopy(MemoryInst)
+errorCopy(MemoryType)
+errorCopy(GlobalType)
+errorCopy(GlobalInst)
+errorCopy(ModuleContext)
 
 
 proc create*(_: typedesc[ConfigureContext]): ConfigureContext = ConfigureContext configureCreate()
@@ -146,7 +162,7 @@ proc createInst*[T](typ: FunctionType, prc: HostProc[T]): FunctionInst =
   FunctionInst typ.distinctBase.functionInstanceCreate(cast[HostFunct](prc), nil, 0)
 
 proc create*(_: typedesc[ModuleContext], name: WasmStrings): ModuleContext = ModuleContext moduleInstanceCreate(name.distinctBase)
-proc create*(_: typedesc[ModuleContext], name: openarray[char]): ModuleContext = ModuleContext moduleInstanceCreate(name.unmanagedWasmString)
+proc create*(_: typedesc[ModuleContext], name: openarray[char]): ModuleContext = ModuleContext moduleInstanceCreate(name.unmanagedWasmString.distinctBase)
 proc createWasiModule*(): ModuleContext = ModuleContext moduleInstanceCreateWasi(nil, 0, nil, 0, nil, 0)
 
 proc add*(c: var ConfigureContext, host: HostRegistration) = c.distinctBase.configureAddHostRegistration(host)
@@ -204,6 +220,9 @@ proc wasmString*(oa: openarray[char or byte]): WasmString = WasmString stringCre
 template unmanagedWasmString*(s: string): UnmanagedWasmString = UnmanagedWasmString stringWrap(s.cstring, uint32 s.len)
 template unmanagedWasmString*(s: cstring, len: uint32): UnmanagedWasmString = UnmanagedWasmString stringWrap(s, len)
 proc unmanagedWasmString*(oa: openarray[char or byte]): UnmanagedWasmString = UnmanagedWasmString(stringWrap(oa[0].addr, uint32 oa.len))
+template umws*(s: string): UnmanagedWasmString =
+  ## Shortcut for writing stringlits
+  unmanagedWasmString(s)
 
 proc `$`*(s: WasmStrings): string =
   result.setlen(256)
@@ -227,37 +246,61 @@ proc createUnmanagedInst*(memType: var MemoryType): UnmanagedMemoryInst = Unmana
 
 
 proc setData*(memoryInst: var MemoryInsts, data: pointer, offset: uint32, len: uint32) =
+  assert memoryInst.distinctBase != nil
   let res = memoryInst.distinctBase.memoryInstanceSetData(cast[ptr uint8](data), offset, len)
   checkResult(res, WasmMemorySetError)
 
 proc setData*[T](memoryInst: var MemoryInsts, data: openArray[T]) =
+  assert memoryInst.distinctBase != nil
   let res = memoryInst.distinctBase.memoryInstanceSetData(cast[ptr uint8](data[0].unsafeaddr), 0, (sizeof(T) * data[0].unsafeaddr).uint32)
   checkResult(res, WasmMemorySetError)
 
 proc setData*[T: not openarray](memoryInst: var MemoryInsts, data: T) =
+  assert memoryInst.distinctBase != nil
   let res = memoryInst.distinctBase.memoryInstanceSetData(cast[ptr uint8](data.unsafeaddr), 0, sizeof(T).uint32)
   checkResult(res, WasmMemorySetError)
 
 proc getData*(memoryInst: MemoryInsts, data: pointer, offset: uint32, len: uint32) =
+  assert memoryInst.distinctBase != nil
   let res = memoryInst.distinctBase.memoryInstanceGetData(cast[ptr uint8](data), offset, len)
   checkResult(res, WasmMemoryGetError)
 
 proc getData*[T](memoryInst: MemoryInsts, data: var openArray[T]) =
+  assert memoryInst.distinctBase != nil
   let res = memoryInst.distinctBase.memoryInstanceGetData(cast[ptr uint8](data[0].addr), 0, data.len.uint32 * sizeof(T))
   checkResult(res, WasmMemoryGetError)
 
 proc getData*[T: not openarray](memoryInst: MemoryInsts, data: var T) =
+  assert memoryInst.distinctBase != nil
   let res = memoryInst.distinctBase.memoryInstanceGetData(cast[ptr uint8](data.addr), 0, uint32 sizeof(T))
+  checkResult(res, WasmMemoryGetError)
+
+proc getData*[T: not openarray](memoryInst: MemoryInsts, data: var T, offset: uint32) =
+  assert memoryInst.distinctBase != nil
+  let res = memoryInst.distinctBase.memoryInstanceGetData(cast[ptr uint8](data.addr), offset, uint32 sizeof(T))
   checkResult(res, WasmMemoryGetError)
 
 proc getPointer*(memoryInst: var MemoryInsts): pointer = memoryInst.distinctBase.memoryInstanceGetPointer(0, 0)
 proc getPointer*(memoryInst: var MemoryInsts, len, offset: uint32): pointer = memoryInst.distinctBase.memoryInstanceGetPointer(len, offset)
 
-proc add*(module: var ModuleContext, memory: sink UnmanagedMemoryInst, name: WasmStrings) =
+proc add*(module: var ModuleContext, memory: sink MemoryInsts, name: WasmStrings) =
   module.distinctBase.moduleInstanceAddMemory(name.distinctBase, memory.distinctBase)
 
 proc findMemory*(module: var ModuleContext, name: WasmStrings): UnmanagedMemoryInst =
   UnmanagedMemoryInst module.distinctBase.moduleInstanceFindMemory(name.distinctBase)
+
+proc findMemory*(module: var ModuleContext, name: openarray[char]): UnmanagedMemoryInst =
+  module.findMemory(unmanagedWasmString name)
+
+# Global API
+
+proc findGlobal*(module: var ModuleContext, name: WasmStrings): UnmanagedGlobalInst =
+  UnmanagedGlobalInst module.distinctBase.moduleInstanceFindGlobal(name.distinctBase)
+
+proc findGlobal*(module: var ModuleContext, name: openarray[char]): UnmanagedGlobalInst =
+  module.findGlobal(unmanagedWasmString name)
+
+proc getValue*(global: GlobalInsts): WasmValue = WasmValue global.distinctBase.globalInstanceGetValue
 
 # Loader API
 proc parseFromFile*(loader: var LoaderContext, ast: var AstModuleContext, name: openarray[char])=
@@ -320,8 +363,14 @@ proc hookFunction*[T](params, results: openArray[ValType], prc: HostProc[T], dat
 proc addFunction*(module: var ModuleContext, funcName: WasmStrings, function: FunctionInst) =
   module.distinctBase.moduleInstanceAddFunction(funcName.distinctBase, function.distinctBase)
 
+proc addFunction*(module: var ModuleContext, funcName: openarray[char], function: FunctionInst) =
+  module.addFunction(unmanagedWasmString funcName, function)
+
 proc findFunction*(module: var ModuleContext, name: WasmStrings): UnmanagedFunctionInst =
   UnmanagedFunctionInst module.distinctBase.moduleInstanceFindFunction(name.distinctBase)
+
+proc findFunction*(module: var ModuleContext, name: openarray[char]): UnmanagedFunctionInst =
+ module.findFunction(unmanagedWasmString name)
 
 proc funcType*(funcInst: var UnmanagedFunctionInst): UnmanagedFunctionType =
   assert funcInst.distinctBase != nil
@@ -330,6 +379,11 @@ proc funcType*(funcInst: var UnmanagedFunctionInst): UnmanagedFunctionType =
 proc invoke*(exec: var ExecutorContext, funcInst: UnmanagedFunctionInst, args, results: var openarray[WasmValue]) =
   assert funcInst.distinctBase != nil
   let res = exec.distinctBase.executorInvoke(funcInst.distinctBase, args[0].addr, args.len.uint32, results[0].addr, results.len.uint32)
+  checkResult(res, WasmExecutionError)
+
+proc invoke*(exec: var ExecutorContext, funcInst: UnmanagedFunctionInst, result: var WasmValue) =
+  assert funcInst.distinctBase != nil
+  let res = exec.distinctBase.executorInvoke(funcInst.distinctBase, nil, 0, result.addr, 1)
   checkResult(res, WasmExecutionError)
 
 proc invoke*(exec: var ExecutorContext, funcInst: UnmanagedFunctionInst, args: var openarray[WasmValue]) =
@@ -353,7 +407,6 @@ func name*(importType: ImportType): UnmanagedWasmString =
 
 func name*(exportType: ExportType): UnmanagedWasmString =
   UnmanagedWasmString exportType.distinctBase.exportTypeGetExternalName()
-
 
 proc initWasi*(module: var ModuleContext) =
   module.distinctBase.moduleInstanceInitWasi(nil, 0, nil, 0, nil, 0)
@@ -436,4 +489,3 @@ iterator returns*(funcType: FunctionTypes): ValType =
     discard funcType.distinctBase.functionTypeGetReturns(retTypes[0].addr, retCount)
     for returnType in retTypes:
       yield returnType
-

@@ -11,7 +11,7 @@ type MyType = object
   x, y, z: int32
   w: float32
 
-var memory {.exportC.}: ptr UncheckedArray[MyType]
+exportVar(myArray, array[100, MyType])
 
 proc getMyType() {.wasmexport.} =
-  memory[0] = MyType(x: 100, y: 300, z: 300, w: 15)
+  myArray[0] = MyType(x: 100, y: 300, z: 300, w: 15)
