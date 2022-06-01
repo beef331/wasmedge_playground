@@ -371,6 +371,8 @@ proc findFunction*(module: var ModuleContext, name: WasmStrings): UnmanagedFunct
 proc findFunction*(module: var ModuleContext, name: openarray[char]): UnmanagedFunctionInst =
  module.findFunction(unmanagedWasmString name)
 
+proc isNil*(inst: FunctionInsts): bool = inst.distinctBase.isNil
+
 proc funcType*(funcInst: var UnmanagedFunctionInst): UnmanagedFunctionType =
   assert funcInst.distinctBase != nil
   UnmanagedFunctionType funcInst.distinctBase.functionInstanceGetFunctionType()
