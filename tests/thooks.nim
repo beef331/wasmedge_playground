@@ -96,7 +96,7 @@ suite "Module test":
     var
       theType = MyType()
       myMem = module.findMemory("memory")
-      offset = cast[uint32](module.findGlobal("myArray").getValue.getValue[: int32]())
+      offset = cast[uint32](module.findGlobal("myArray").getVal[: int32]())
       wasmOffset = WasmValue()
 
     let getMyType = module.findFunction("getMyType")
