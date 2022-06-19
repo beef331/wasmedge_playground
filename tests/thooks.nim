@@ -60,6 +60,7 @@ suite "Module test":
 
 
     let funcName = module.findFunction(wasmString"indirectCall")
+    funcName.funcType().ensureType([valTypei32, valTypei32], [])
 
     executor.invoke(funcName, args, results)
   test "Ensure all procedures match":
@@ -97,9 +98,9 @@ suite "Module test":
       theType = MyType()
       myMem = module.findMemory("memory")
       offset = cast[uint32](module.findGlobal("myArray").getVal[: int32]())
-      wasmOffset = WasmValue()
 
     let getMyType = module.findFunction("getMyType")
+    getMyType.funcType.ensureType([], [])
     executor.invoke(getMyType)
     myMem.getData(theType, offset)
     check theType == MyType(x: 100, y: 300, z: 300, w: 15)

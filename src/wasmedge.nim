@@ -50,6 +50,7 @@ type
   WasmImportError* = object of WasmError
   WasmMemorySetError* = object of WasmError
   WasmMemoryGetError* = object of WasmError
+  WasmFuncMismatch* = object of WasmError
 
 
   WasmReturnVal* = distinct WasmValue
@@ -96,7 +97,6 @@ type
 
   ImportType* = distinct ptr WasmImportTypeContext
   ExportType* = distinct ptr WasmExportTypeContext
-
 
   HostRegistration* = enumwasmedgehostregistration
   ValType* = enumwasmedgevaltype
@@ -373,9 +373,52 @@ proc findFunction*(module: var ModuleContext, name: openarray[char]): UnmanagedF
 
 proc isNil*(inst: FunctionInsts): bool = inst.distinctBase.isNil
 
-proc funcType*(funcInst: var UnmanagedFunctionInst): UnmanagedFunctionType =
+proc funcType*(funcInst: UnmanagedFunctionInst): UnmanagedFunctionType =
   assert funcInst.distinctBase != nil
   UnmanagedFunctionType funcInst.distinctBase.functionInstanceGetFunctionType()
+
+proc paramCount*(funcType: FunctionTypes): uint32 = funcType.distinctBase.functionTypeGetParametersLength()
+proc returnCount*(funcType: FunctionTypes): uint32 = funcType.distinctBase.functionTypeGetReturnsLength()
+
+proc getParams*(funcType: FunctionTypes): seq[ValType] =
+  result = newSeq[ValType](int funcType.paramCount)
+  if result.len > 0:
+    discard funcType.distinctBase.functionTypeGetParameters(result[0].addr, uint32 result.len)
+
+proc getReturns*(funcType: FunctionTypes): seq[ValType] =
+  result = newSeq[ValType](int funcType.returnCount)
+  if result.len > 0:
+    discard funcType.distinctBase.functionTypeGetReturns(result[0].addr, uint32 result.len)
+
+proc makeFuncSig*(params, results: openarray[ValType]): string =
+  ## Useful procedure for showing expected definitions
+  result = "proc("
+  for i, x in params:
+    result.add $x
+    if i < params.high:
+      result.add ", "
+  result.add ")"
+
+  result.add "("
+  for i, x in results:
+    result.add $x
+    if i < results.high:
+      result.add ", "
+  result.add ")"
+
+proc ensureType*(funcType: FunctionTypes, params, results: openarray[ValType]) =
+  ## Raises an exception if mismatch
+  let
+    funcParams = funcType.getParams()
+    funcReturns = funcType.getReturns()
+  if params != funcParams or results != funcReturns:
+    raise newException(
+      WasmFuncMismatch,
+      "Function mismatch got $# but expected $#" % [makeFuncSig(funcParams, funcReturns), makeFuncSig(params, results)]
+    )
+
+
+
 
 proc invoke*(exec: var ExecutorContext, funcInst: UnmanagedFunctionInst, args: openarray[WasmValue], results: var openarray[WasmValue]) =
   assert funcInst.distinctBase != nil

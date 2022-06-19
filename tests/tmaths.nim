@@ -53,6 +53,10 @@ test "Executor Math Test":
     addFunc = module.findFunction(wasmString"add")
     mulFunc = module.findFunction(wasmString"multiply")
 
+  addFunc.funcType.ensureType([valtypei32, valtypei32], [valtypei32])
+  mulFunc.funcType.ensureType([valtypei32, valtypei32], [valtypei32])
+
+
   var params = [wasmValue(10i32), wasmValue(30i32)]
   var results = [WasmValue()]
   executor.invoke(addFunc, params, results)
