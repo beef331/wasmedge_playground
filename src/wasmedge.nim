@@ -245,7 +245,7 @@ proc setData*(memoryInst: var MemoryInsts, data: pointer, offset: uint32, len: u
 
 proc setData*[T](memoryInst: var MemoryInsts, data: openArray[T]) =
   assert memoryInst.distinctBase != nil
-  let res = memoryInst.distinctBase.memoryInstanceSetData(cast[ptr uint8](data[0].unsafeaddr), 0, (sizeof(T) * data[0].unsafeaddr).uint32)
+  let res = memoryInst.distinctBase.memoryInstanceSetData(cast[ptr uint8](data[0].unsafeaddr), 0, (sizeof(T) * data.len).uint32)
   checkResult(res, WasmMemorySetError)
 
 proc setData*[T: not openarray](memoryInst: var MemoryInsts, data: T) =
