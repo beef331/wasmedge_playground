@@ -420,27 +420,37 @@ proc ensureType*(funcType: FunctionTypes, params, results: openarray[ValType]) =
 
 
 
-proc invoke*(exec: var ExecutorContext, funcInst: UnmanagedFunctionInst, args: openarray[WasmValue], results: var openarray[WasmValue]) =
+proc invoke*(exec: var ExecutorContext, funcInst: FunctionInsts, args: openarray[WasmValue], results: var openarray[WasmValue]) =
   assert funcInst.distinctBase != nil
   let res = exec.distinctBase.executorInvoke(funcInst.distinctBase, args[0].unsafeaddr, args.len.uint32, results[0].addr, results.len.uint32)
   checkResult(res, WasmExecutionError)
 
-proc invoke*(exec: var ExecutorContext, funcInst: UnmanagedFunctionInst, result: var WasmValue) =
+proc invoke*(exec: var ExecutorContext, funcInst: FunctionInsts, result: var WasmValue) =
   assert funcInst.distinctBase != nil
   let res = exec.distinctBase.executorInvoke(funcInst.distinctBase, nil, 0, result.addr, 1)
   checkResult(res, WasmExecutionError)
 
-proc invoke*(exec: var ExecutorContext, funcInst: UnmanagedFunctionInst, args: openarray[WasmValue]) =
+proc invoke*(exec: var ExecutorContext, funcInst: FunctionInsts, arg: WasmValue, result: var WasmValue) =
+  assert funcInst.distinctBase != nil
+  let res = exec.distinctBase.executorInvoke(funcInst.distinctBase, arg.unsafeaddr, 1, result.addr, 1)
+  checkResult(res, WasmExecutionError)
+
+proc invoke*(exec: var ExecutorContext, funcInst: FunctionInsts, arg: WasmValue) =
+  assert funcInst.distinctBase != nil
+  let res = exec.distinctBase.executorInvoke(funcInst.distinctBase, arg.unsafeaddr, 1, nil, 0)
+  checkResult(res, WasmExecutionError)
+
+proc invoke*(exec: var ExecutorContext, funcInst: FunctionInsts, args: openarray[WasmValue]) =
   assert funcInst.distinctBase != nil
   let res = exec.distinctBase.executorInvoke(funcInst.distinctBase, args[0].unsafeaddr, args.len.uint32, nil, 0)
   checkResult(res, WasmExecutionError)
 
-proc invoke*(exec: var ExecutorContext, funcInst: UnmanagedFunctionInst, results: var openarray[WasmValue]) =
+proc invoke*(exec: var ExecutorContext, funcInst: FunctionInsts, results: var openarray[WasmValue]) =
   assert funcInst.distinctBase != nil
   let res = exec.distinctBase.executorInvoke(funcInst.distinctBase, nil, 0, results[0].addr, results.len.uint32)
   checkResult(res, WasmExecutionError)
 
-proc invoke*(exec: var ExecutorContext, funcInst: UnmanagedFunctionInst) =
+proc invoke*(exec: var ExecutorContext, funcInst: FunctionInsts) =
   assert funcInst.distinctBase != nil
   let res = exec.distinctBase.executorInvoke(funcInst.distinctBase, nil, 0, nil, 0)
   checkResult(res, WasmExecutionError)
