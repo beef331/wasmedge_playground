@@ -40,7 +40,7 @@ when wasmedgePath.len > 0: # Only add link path if we've data
 {.passL:"-lwasmedge_c".}
 
 type
-  WasmTypes* = int32 or float32 or int64 or float64
+  WasmTypes* = int32 or float32 or uint32 or int64 or float64 or uint64
   WasmError* = object of CatchableError
     code*: uint32
   WasmLoadError* = object of WasmError
@@ -170,7 +170,9 @@ template code*(res: WasmResult): uint32 = resultGetCode(res)
 
 
 template wasmValue*(i: int32): WasmValue = valueGenI32(i)
+template wasmValue*(i: uint32): WasmValue = valueGenI32(cast[int32](i))
 template wasmValue*(i: int64): WasmValue = valueGenI64(i)
+template wasmValue*(i: uint64): WasmValue = valueGenI64(cast[int64](i))
 template wasmValue*(f: float32): WasmValue = valueGenF32(f)
 template wasmValue*(f: float64): WasmValue = valueGenF64(f)
 template wasmValue*[T](t: var T): WasmValue = valueGenExternRef(t.addr)
@@ -178,8 +180,12 @@ template wasmValue*[T](t: var T): WasmValue = valueGenExternRef(t.addr)
 proc getValue*[T: WasmTypes](val: WasmValue): T =
   when T is int32:
     valueGeti32(val)
+  elif T is uint32:
+    cast[T](valueGeti32(val))
   elif T is int64:
     valueGeti64(val)
+  elif T is uint64:
+    cast[T](valueGeti64(val))
   elif T is float32:
     valueGetf32(val)
   elif T is float64:
