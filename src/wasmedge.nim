@@ -431,6 +431,11 @@ proc invoke*(exec: var ExecutorContext, funcInst: FunctionInsts, args: openarray
   let res = exec.distinctBase.executorInvoke(funcInst.distinctBase, args[0].unsafeaddr, args.len.uint32, results[0].addr, results.len.uint32)
   checkResult(res, WasmExecutionError)
 
+proc invoke*(exec: var ExecutorContext, funcInst: FunctionInsts, args: openarray[WasmValue], results: var WasmValue) =
+  assert funcInst.distinctBase != nil
+  let res = exec.distinctBase.executorInvoke(funcInst.distinctBase, args[0].unsafeaddr, args.len.uint32, results.addr, 1u32)
+  checkResult(res, WasmExecutionError)
+
 proc invoke*(exec: var ExecutorContext, funcInst: FunctionInsts, result: var WasmValue) =
   assert funcInst.distinctBase != nil
   let res = exec.distinctBase.executorInvoke(funcInst.distinctBase, nil, 0, result.addr, 1)
